@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
@@ -87,6 +87,18 @@ jobs:
         working-directory: backend
         run: docker build -t pos-toko-backend:${{ github.sha }} .
 
-      # Untuk deploy sungguhan: tambahkan step push image ke registry
-      # (Docker Hub / GHCR) di sini, lalu trigger deploy ke server/hosting
-      # pilihan Anda. Lihat README.md bagian "Deploy" untuk beberapa opsi.
+  deploy:
+    needs: build-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute remote ssh commands
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            cd /root/Smart-Cashier
+            git pull origin main
+            docker compose down
+            docker compose up -d --build
