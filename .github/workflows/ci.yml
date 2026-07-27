@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres123
+          POSTGRES_DB: pos_kasir
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependency backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Migrasi & seed database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://postgres:postgres123@localhost:5432/pos_kasir
+        run: npm run migrate
+
+      - name: Jalankan server & smoke test
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://postgres:postgres123@localhost:5432/pos_kasir
+          JWT_SECRET: ci-test-secret
+          PORT: 4001
+        run: |
+          node src/server.js &
+          SERVER_PID=$!
+          echo "Menunggu server siap..."
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:4001/health > /dev/null; then
+              echo "Server siap."
+              break
+            fi
+            sleep 1
+          done
+
+          echo "== Health check =="
+          curl -sf http://localhost:4001/health
+
+          echo ""
+          echo "== Login admin harus berhasil =="
+          curl -sf -X POST http://localhost:4001/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"admin123"}' | grep -q token
+
+          echo "Smoke test lulus."
+          kill $SERVER_PID
+
+  build-image:
+    runs-on: ubuntu-latest
+    needs: test-backend
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Build Docker image backend
+        working-directory: backend
+        run: docker build -t pos-toko-backend:${{ github.sha }} .
+
+      # Untuk deploy sungguhan: tambahkan step push image ke registry
+      # (Docker Hub / GHCR) di sini, lalu trigger deploy ke server/hosting
+      # pilihan Anda. Lihat README.md bagian "Deploy" untuk beberapa opsi.

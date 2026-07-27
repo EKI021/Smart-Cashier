@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: pos_kasir
+    volumes:
+      - pos_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4001
+      JWT_SECRET: ${JWT_SECRET:-ganti-secret-ini-di-produksi}
+      DATABASE_URL: postgres://postgres:postgres123@db:5432/pos_kasir
+    ports:
+      - "4001:4001"
+    # Migrasi skema dulu, baru start server -- supaya kontainer backend
+    # yang baru (mis. saat deploy pertama kali) langsung siap tanpa langkah manual.
+    command: sh -c "node src/db/migrate.js && node src/server.js"
+
+volumes:
+  pos_db_data:

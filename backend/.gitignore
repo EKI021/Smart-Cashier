@@ -1,0 +1,4 @@
+node_modules/
+.env
+server.log
+branch-client/local-queue.sqlite
